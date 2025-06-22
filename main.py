@@ -1,28 +1,7 @@
 import cv2
 import numpy as np
 
-
-# Abrimos el video
-cap = cv2.VideoCapture('ruta_2.mp4')                
-
-# Obtenemos dimensiones del video para posteriormente usar en ROI
-width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-# Funcion para que no tome los bordes de ROI
 def punto_cerca_borde(mascara, x, y, margen=3):
-    """
-    Verifica si el punto (x,y) está a menos de 'margen' pixeles de la frontera
-    entre 0 y 255 en la máscara.
-
-    Parámetros:
-    - mascara: array numpy 2D con valores 0 o 255
-    - x,y: coordenadas del punto
-    - margen: radio de búsqueda para vecinos (por defecto 3 píxeles)
-
-    Retorna:
-    - True si está cerca del borde, False si está dentro del área sin borde
-    """
     h, w = mascara.shape
     x_min = max(x - margen, 0)
     x_max = min(x + margen, w - 1)
@@ -31,78 +10,100 @@ def punto_cerca_borde(mascara, x, y, margen=3):
 
     ventana = mascara[y_min:y_max+1, x_min:x_max+1]
 
-    # Si dentro de la ventana hay tanto pixeles 0 como 255, está en la frontera
-    if np.any(ventana == 0) and np.any(ventana == 255):
-        return True
-    return False
+    return np.any(ventana == 0) and np.any(ventana == 255)
 
+def dibujar_linea_representativa(frame, lineas, color, height):
+    if len(lineas) == 0:
+        return
+    xs = []
+    ys = []
+    for x1, y1, x2, y2 in lineas:
+        xs.extend([x1, x2])
+        ys.extend([y1, y2])
+    m, b = np.polyfit(xs, ys, 1)
 
-# Procesamos el video
-while cap.isOpened():                         # Itero, siempre y cuando el video esté abierto
-    ret, frame = cap.read()                   # Obtengo el frame
-    if ret:                                   # ret indica si la lectura fue exitosa (True) o no (False)
-        # Mostramos el frame original
-        cv2.imshow('Frame',frame)
-        
-        # Convertimos a escala de grises
+    y1_draw = height
+    y2_draw = 330  # altura del vértice superior del trapecio ROI
+
+    x1_draw = int((y1_draw - b) / m)
+    x2_draw = int((y2_draw - b) / m)
+
+    cv2.line(frame, (x1_draw, y1_draw), (x2_draw, y2_draw), color, 6)
+
+def procesar_video(ruta_video):
+    cap = cv2.VideoCapture(ruta_video)
+    if not cap.isOpened():
+        print(f"No se pudo abrir el video: {ruta_video}")
+        return
+
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            print("Error al leer el frame o fin del video")
+            break
+
         gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        cv2.imshow('Gris', gris)
-        
-        gris_suave = cv2.GaussianBlur(gris, (5, 5), 0) # suavizamos para que no se detecten bordes falsos
-        cv2.imshow('Gris Suave', gris_suave)
-        
-        # Creamos una máscara para la región de interés (ROI)
+        gris_suave = cv2.GaussianBlur(gris, (5, 5), 0)
+
+        # Crear máscara de ROI (trapecio)
         mascara = np.zeros_like(gris_suave)
         puntos = np.array([[
-        (int(width * 0.1), height),
-        (int(width * 0.45), int(height * 0.6)),
-        (int(width * 0.55), int(height * 0.6)),
-        (int(width * 0.9), height)]], dtype=np.int32)
+            (115, height),
+            (915, height),
+            (560, 330),
+            (420, 330)
+        ]], dtype=np.int32)
         cv2.fillPoly(mascara, puntos, 255)
 
-        # Aplicamos la máscara
         roi = cv2.bitwise_and(gris_suave, mascara)
-        
-        cv2.imshow('ROI aplicada', roi) # esto para mostrar como queda ROI
-
-
-        # Usamos Canny para detectar bordes 
         edges = cv2.Canny(roi, threshold1=80, threshold2=150)
-        
-        cv2.imshow('Bordes Canny', edges)
 
-
-        # Usamos Hough para detectar líneas
         lineas = cv2.HoughLinesP(
-        edges,
-        rho=1,                     # precisión en pixeles
-        theta=np.pi/180,           # precisión angular (1 grado)
-        threshold=20,              # mínimo votos para considerar una línea
-        minLineLength=40,          # longitud mínima de línea
-        maxLineGap=100             # máxima separación entre segmentos para unirlos
+            edges,
+            rho=1,
+            theta=np.pi/180,
+            threshold=10,
+            minLineLength=50,
+            maxLineGap=100
         )
-        
-        # Dibujamos las líneas detectadas 
+
+        lineas_izquierda = []
+        lineas_derecha = []
+
         if lineas is not None:
             for linea in lineas:
                 x1, y1, x2, y2 = linea[0]
-                
-                # Si alguno de los puntos está cerca del borde, descartamos la línea
+
                 if punto_cerca_borde(mascara, x1, y1) or punto_cerca_borde(mascara, x2, y2):
                     continue
-                
-                # Si pasa el filtro, dibujamos la línea en el frame original
-                cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 0), 5)  # líneas azules, grosor 5
+                if x2 - x1 == 0:
+                    continue
 
-        cv2.imshow('Lineas detectadas', frame)
-        
-        # Esperamos tecla para salir
+                pendiente = (y2 - y1) / (x2 - x1)
+                if abs(pendiente) < 0.5:
+                    continue
+
+                x_centro = (x1 + x2) / 2
+                if pendiente < 0 and x_centro < width / 2:
+                    lineas_izquierda.append((x1, y1, x2, y2))
+                elif pendiente > 0 and x_centro > width / 2:
+                    lineas_derecha.append((x1, y1, x2, y2))
+
+        # Dibujar líneas representativas en el frame original
+        dibujar_linea_representativa(frame, lineas_izquierda, (255, 0, 0), height)
+        dibujar_linea_representativa(frame, lineas_derecha, (255, 0, 0), height)
+
+        # Mostrar resultado
+        cv2.imshow('Lineas representativas', frame)
+
         if cv2.waitKey(25) & 0xFF == ord('q'):
             break
-    else:
-        print("Error al leer el frame")                                 # Imprimo un mensaje de error si no se pudo leer el frame
-        break                                       # Corto la reproducción si ret=False, es decir, si hubo un error o no quedán mas frames.
 
-# Liberamos recursos
-cap.release()
-cv2.destroyAllWindows()
+    cap.release()
+    cv2.destroyAllWindows()
+
+#procesar_video("ruta_1.mp4")
+procesar_video("ruta_2.mp4")
