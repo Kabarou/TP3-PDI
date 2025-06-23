@@ -41,20 +41,19 @@ def procesar_video(ruta_video):
     if not cap.isOpened():
         print(f"No se pudo abrir el video: {ruta_video}")
         return        
+    # Obtenemos dimensiones
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    # Memoria de líneas anteriores
+    lineas_izquierda_prev = []
+    lineas_derecha_prev = []
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             print("Error al leer el frame o fin del video")
             break
-        
-        # Obtenemos dimensiones
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        # Memoria de líneas anteriores
-        lineas_izquierda_prev = []
-        lineas_derecha_prev = []
 
         # Pasamos a escala de grises
         gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -139,7 +138,7 @@ def procesar_video(ruta_video):
         if key == ord('q'):
             break
         elif key == ord('p'):  # pausa
-            print("⏸ Video pausado. Presioná cualquier tecla para continuar.")
+            print("Video pausado. Presioná cualquier tecla para continuar.")
             cv2.waitKey(0)
 
     cap.release()
