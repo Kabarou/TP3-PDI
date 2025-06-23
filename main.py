@@ -99,14 +99,19 @@ def procesar_video(ruta_video):
             for linea in lineas:
                 x1, y1, x2, y2 = linea[0]
 
+                # Descartamos lineas verticales
                 if x2 - x1 == 0:
                     continue
 
                 pendiente = (y2 - y1) / (x2 - x1)
+
+                # Descartamos lineas casi horizontales
                 if abs(pendiente) < 0.5:
                     continue
-
+                
                 x_centro = (x1 + x2) / 2
+
+                # Diferenciamos lineas de la derecha e izquierda
                 if pendiente < 0 and x_centro < width / 2:
                     lineas_izquierda.append((x1, y1, x2, y2))
                 elif pendiente > 0 and x_centro > width / 2:
